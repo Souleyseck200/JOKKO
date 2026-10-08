@@ -1,0 +1,20 @@
+{
+  "name": "lan-comm-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "server",
+    "mobile"
+  ],
+  "scripts": {
+    "dev:server": "npm --workspace=server run dev",
+    "dev:mobile": "npm --workspace=mobile run start",
+    "test": "npm --workspace=server run test",
+    "build:server": "npm --workspace=server run build",
+    "seed": "npm --workspace=server run seed"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

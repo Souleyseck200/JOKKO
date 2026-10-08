@@ -1,0 +1,215 @@
+openapi: 3.0.3
+info:
+  title: LAN-Comm API
+  version: "1.0.0"
+servers:
+  - url: http://192.168.1.10:3000/api/v1
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, bearerFormat: JWT }
+  schemas:
+    User:
+      type: object
+      required: [id, username, displayName, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        displayName: { type: string }
+        avatarFileId: { type: string, format: uuid, nullable: true }
+        createdAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time, nullable: true }
+        online: { type: boolean }
+    AuthResponse:
+      type: object
+      required: [token, user]
+      properties:
+        token: { type: string }
+        user: { $ref: '#/components/schemas/User' }
+    Attachment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        originalName: { type: string }
+        mime: { type: string }
+        size: { type: integer }
+        width: { type: integer, nullable: true }
+        height: { type: integer, nullable: true }
+    Message:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        seq: { type: integer }
+        conversationId: { type: string, format: uuid }
+        senderId: { type: string, format: uuid }
+        clientMsgId: { type: string, format: uuid }
+        kind: { type: string, enum: [text, image, file, system] }
+        body: { type: string }
+        attachments: { type: array, items: { $ref: '#/components/schemas/Attachment' } }
+        createdAt: { type: string, format: date-time }
+    ConversationSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [direct, group] }
+        title: { type: string, nullable: true }
+        members: { type: array, items: { $ref: '#/components/schemas/User' } }
+        lastMessage: { allOf: [{ $ref: '#/components/schemas/Message' }], nullable: true }
+        unreadCount: { type: integer }
+        lastMessageSeq: { type: integer, nullable: true }
+    CallRecord:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        callerId: { type: string, format: uuid }
+        calleeId: { type: string, format: uuid }
+        media: { type: string, enum: [audio, video] }
+        status: { type: string, enum: [completed, missed, rejected, cancelled, busy, failed] }
+        startedAt: { type: string, format: date-time }
+        answeredAt: { type: string, format: date-time, nullable: true }
+        endedAt: { type: string, format: date-time, nullable: true }
+        durationSec: { type: integer, nullable: true }
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+security:
+  - bearer: []
+paths:
+  /server-info:
+    get:
+      security: []
+      summary: Infos serveur
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string }
+                  version: { type: string }
+                  protocol: { type: integer }
+                  maxUploadMb: { type: integer }
+                  registrationOpen: { type: boolean }
+  /auth/register:
+    post:
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, displayName, password]
+              properties:
+                username: { type: string, minLength: 3, maxLength: 24, pattern: '^[a-z0-9_.-]+$' }
+                displayName: { type: string, minLength: 1, maxLength: 40 }
+                password: { type: string, minLength: 6 }
+                inviteCode: { type: string }
+      responses:
+        '201': { description: Créé, content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } } }
+        '409': { description: USERNAME_TAKEN }
+  /auth/login:
+    post:
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } } }
+        '401': { description: Identifiants invalides }
+        '429': { description: Trop de tentatives }
+  /auth/me:
+    get:
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+  /users:
+    get:
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/User' } } } } }
+  /users/me:
+    patch:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName: { type: string }
+                avatarFileId: { type: string, format: uuid, nullable: true }
+      responses:
+        '200': { description: OK }
+  /conversations:
+    get:
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ConversationSummary' } } } } }
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, userId]
+              properties:
+                type: { type: string, enum: [direct] }
+                userId: { type: string, format: uuid }
+      responses:
+        '200': { description: Conversation existante }
+        '201': { description: Conversation créée }
+  /conversations/{id}/messages:
+    get:
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: beforeSeq, in: query, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 40 } }
+      responses:
+        '200':
+          description: Messages par seq décroissant
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages: { type: array, items: { $ref: '#/components/schemas/Message' } }
+                  hasMore: { type: boolean }
+        '403': { description: Non membre }
+  /files:
+    post:
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201': { description: Créé, content: { application/json: { schema: { $ref: '#/components/schemas/Attachment' } } } }
+        '413': { description: Trop gros }
+        '415': { description: Type non autorisé }
+  /files/{id}:
+    get:
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Flux binaire (Range supporté) }
+        '403': { description: Accès refusé }
+        '404': { description: Introuvable }
+  /calls:
+    get:
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 50 } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/CallRecord' } } } } }
